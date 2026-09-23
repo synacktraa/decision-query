@@ -6,4 +6,18 @@ CREATE OR REPLACE FUNCTION dq_version AS () -> 'v@DQ_VERSION_TEXT@';
 -- Slow by design: starts a worker, loads the model, reports its backend.
 CREATE OR REPLACE FUNCTION dq_backend AS () -> dq_backend_raw(1);
 
-CREATE OR REPLACE FUNCTION decide AS (state, questions) -> dq_decide(state, questions);
+-- Validation happens here, with the messages the other modules emit. ClickHouse
+-- evaluates the executable function eagerly, before if() picks a branch, so the
+-- worker is handed NULL rather than unusable text and the throwIf is the only
+-- error a bad argument can raise. throwIf ignores a NULL condition, so a NULL
+-- questions passes through and comes back NULL.
+CREATE OR REPLACE FUNCTION dq_questions AS (questions) ->
+  if(isValidJSON(questions) AND JSONType(questions) = 'Object' AND JSONLength(questions) > 0,
+     questions, NULL);
+
+CREATE OR REPLACE FUNCTION decide AS (state, questions) ->
+  if(throwIf(NOT isValidJSON(questions), 'questions must be valid JSON')
+     OR throwIf(JSONType(questions) != 'Object' OR JSONLength(questions) = 0,
+                'questions must be a nonempty JSON object'),
+     NULL,
+     dq_decide(state, dq_questions(questions)));
