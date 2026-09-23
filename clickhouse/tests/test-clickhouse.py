@@ -176,6 +176,16 @@ class TestBuild(unittest.TestCase):
     self.assertEqual(xml.count("<command>decision-query-udf --backend="), 2)
     self.assertIn(" --print-backend</command>", xml)
 
+  def test_install_places_the_worker_and_the_xml_under_a_prefix(self):
+    with tempfile.TemporaryDirectory() as prefix:
+      completed = subprocess.run(["cmake", "--install", str(BUILD.parent), "--component", "clickhouse",
+                                  "--prefix", prefix], capture_output=True, text=True)
+      self.assertEqual(completed.returncode, 0, completed.stderr)
+      worker = Path(prefix) / "var/lib/clickhouse/user_scripts/decision-query-udf"
+      self.assertTrue(os.access(worker, os.X_OK), f"{worker} is missing or not executable")
+      self.assertTrue((Path(prefix) / "etc/clickhouse-server/decision_query_function.xml").exists())
+
+
 
 class TestClickHouse(unittest.TestCase):
   """The SQL surface, through clickhouse local and the fake endpoint."""
