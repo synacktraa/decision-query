@@ -158,6 +158,14 @@ CLICKHOUSE_CMAKE_FLAGS=$(if $(DQ_MODEL_DIR),-DDQ_MODEL_DIR=$(CLICKHOUSE_BACKEND)
 clickhouse:
 	cmake -S . -B $(BUILD) $(CMAKE_FLAGS) $(CLICKHOUSE_CMAKE_FLAGS) && cmake --build $(BUILD) --parallel --target decision-query-udf
 
+CLICKHOUSE_PREFIX?=/
+
+# Installs the worker and the XML under CLICKHOUSE_PREFIX (may need sudo), then
+# names the SQL file to run once with clickhouse-client.
+clickhouse-install: clickhouse
+	cmake --install $(BUILD) --component clickhouse --prefix $(CLICKHOUSE_PREFIX)
+	@echo "Now run: clickhouse-client --queries-file $(BUILD)/clickhouse/decision_query.sql"
+
 test-clickhouse:
 	$(PYTHON) clickhouse/tests/test-clickhouse.py
 
@@ -176,4 +184,4 @@ test:
 	python python-release python-versions model \
 	postgres postgres-install test-postgres test-loadable test-python \
 	test-native memcheck fuzz \
-	clickhouse test-clickhouse
+	clickhouse clickhouse-install test-clickhouse

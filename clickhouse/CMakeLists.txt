@@ -27,3 +27,12 @@ if(DQ_OPTIONS AND NOT DQ_OPTIONS STREQUAL "{}")
 endif()
 configure_file(config/decision_query_function.xml.in decision_query_function.xml @ONLY)
 configure_file(sql/decision_query.sql.in decision_query.sql @ONLY)
+
+# Install layout, relative to the install prefix (make clickhouse-install uses /).
+set(DQ_CLICKHOUSE_SCRIPTS_DIR "var/lib/clickhouse/user_scripts" CACHE PATH
+  "ClickHouse's user_scripts_path, where executable functions must live")
+set(DQ_CLICKHOUSE_CONFIG_DIR "etc/clickhouse-server" CACHE PATH
+  "ClickHouse's server config directory, where *_function.xml files are read")
+install(TARGETS decision-query-udf RUNTIME DESTINATION "${DQ_CLICKHOUSE_SCRIPTS_DIR}" COMPONENT clickhouse)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/decision_query_function.xml"
+  DESTINATION "${DQ_CLICKHOUSE_CONFIG_DIR}" COMPONENT clickhouse)
