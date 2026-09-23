@@ -18,6 +18,7 @@ namespace {
 
   struct arguments {
     std::string backend, options;
+    bool print_backend = false;
   };
 
   arguments parse_arguments(int argc, char **argv) {
@@ -28,6 +29,8 @@ namespace {
         parsed.backend = argument.substr(10);
       else if (argument.rfind("--options=", 0) == 0)
         parsed.options = argument.substr(10);
+      else if (argument == "--print-backend")
+        parsed.print_backend = true;
       else
         throw std::invalid_argument("Unknown argument: " + argument);
     }
@@ -90,6 +93,10 @@ int main(int argc, char **argv) {
     while (std::getline(std::cin, line)) {
       if (line.empty()) continue;
       const json row = json::parse(line);
+      if (args.print_backend) {
+        write_result(engine.backend_name());
+        continue;
+      }
       const json &state = row.at("state");
       const json &questions = row.at("questions");
       if (state.is_null() || questions.is_null()) {
