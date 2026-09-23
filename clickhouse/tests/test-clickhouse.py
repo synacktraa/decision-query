@@ -242,6 +242,38 @@ class TestClickHouse(unittest.TestCase):
     self.assertEqual((rows, code), ([[None, None]], 0), stderr)
     self.assertEqual(self.endpoint.requests, [])
 
+  def test_noul_builds_the_question_with_and_without_criteria(self):
+    rows, stderr, code = self.query("""SELECT
+      noul('body', 'Is this a "refund"?', ''),
+      noul('body', 'Is this a refund?', '{"true": "a refund is requested", "false": "no refund is requested"}')""")
+    self.assertEqual((rows, code), ([[0.25, 0.25]], 0), stderr)
+    self.assertCountEqual([request["body"]["questions"] for request in self.endpoint.requests], [
+      {"q": {"type": "noul", "instructions": 'Is this a "refund"?'}},
+      {"q": {"type": "noul", "instructions": "Is this a refund?",
+             "criteria": {"true": "a refund is requested", "false": "no refund is requested"}}}])
+
+  def test_noul_rejects_bad_criteria_before_the_worker(self):
+    rows, stderr, code = self.query("SELECT noul('body', 'question', 'nope')")
+    self.assertNotEqual(code, 0)
+    self.assertIn("noul criteria must be valid JSON", stderr)
+    self.assertNotIn("Executable generates stderr", stderr)
+    self.assertNotIn("Child process", stderr, "the wrapper, not the worker, must reject it")
+    self.assertEqual(self.endpoint.requests, [])
+
+  def test_noul_null_in_null_out(self):
+    rows, stderr, code = self.query("""SELECT
+      noul(CAST(NULL AS Nullable(String)), 'question', ''),
+      noul('body', CAST(NULL AS Nullable(String)), ''),
+      noul('body', 'question', CAST(NULL AS Nullable(String)))""")
+    self.assertEqual((rows, code), ([[None, None, None]], 0), stderr)
+    self.assertEqual(self.endpoint.requests, [])
+
+  def test_noul_takes_exactly_three_arguments(self):
+    # ClickHouse words this differently for SQL-defined functions than for built-ins.
+    rows, stderr, code = self.query("SELECT noul('body', 'question')")
+    self.assertNotEqual(code, 0)
+    self.assertIn("expect 3 arguments. Actual: 2", stderr)
+
 
 if __name__ == "__main__":
   unittest.main()
