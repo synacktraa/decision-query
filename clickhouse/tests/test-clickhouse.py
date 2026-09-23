@@ -64,6 +64,32 @@ def run_worker(rows, *flags):
   return results, completed.stderr, completed.returncode
 
 
+def clickhouse(sql, backend, options=""):
+  """Runs SQL in a fresh clickhouse local with the wrappers loaded and the worker
+  pointed at backend. Returns (rows, stderr, exit code); rows come from
+  JSONCompactEachRow output, so NULL is None and numbers are numbers."""
+  with tempfile.TemporaryDirectory() as directory:
+    directory = Path(directory)
+    scripts = directory / "scripts"
+    scripts.mkdir()
+    shutil.copy2(WORKER, scripts / "decision-query-udf")
+    command = f"decision-query-udf --backend={backend}" + (f" --options={options}" if options else "")
+    xml = re.sub(r"<command>decision-query-udf[^<]*</command>",
+                 lambda m: f"<command>{command}{' --print-backend' if '--print-backend' in m.group(0) else ''}</command>",
+                 XML.read_text())
+    (directory / "decision_query_function.xml").write_text(xml)
+    (directory / "config.xml").write_text(
+      f"<clickhouse><user_scripts_path>{scripts}/</user_scripts_path>"
+      f"<user_defined_executable_functions_config>{directory}/*_function.xml</user_defined_executable_functions_config>"
+      "</clickhouse>")
+    wrappers = WRAPPERS.read_text() if WRAPPERS.exists() else ""
+    completed = subprocess.run([CLICKHOUSE, "local", "-C", str(directory / "config.xml"),
+                                "--output-format", "JSONCompactEachRow", "--query", wrappers + "\n" + sql],
+                               capture_output=True, text=True, timeout=600)
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
+    return rows, completed.stderr, completed.returncode
+
+
 class TestWorker(unittest.TestCase):
   """The worker on its own, fed lines the way ClickHouse feeds them."""
 
@@ -149,6 +175,34 @@ class TestBuild(unittest.TestCase):
     self.assertIn("<name>dq_backend_raw</name>", xml)
     self.assertEqual(xml.count("<command>decision-query-udf --backend="), 2)
     self.assertIn(" --print-backend</command>", xml)
+
+
+class TestClickHouse(unittest.TestCase):
+  """The SQL surface, through clickhouse local and the fake endpoint."""
+
+  @classmethod
+  def setUpClass(cls):
+    if not WORKER.exists():
+      raise AssertionError(f"{WORKER} is missing; build it with: make clickhouse")
+    if not CLICKHOUSE:
+      raise AssertionError("no clickhouse binary found; install one (curl https://clickhouse.com/ | sh) or set CLICKHOUSE")
+    cls.endpoint = SystemOne()
+
+  @classmethod
+  def tearDownClass(cls):
+    cls.endpoint.close()
+
+  def setUp(self):
+    self.endpoint.requests.clear()
+    self.endpoint.status = 200
+
+  def query(self, sql):
+    return clickhouse(sql, self.endpoint.url)
+
+  def test_dq_version_and_dq_backend(self):
+    rows, stderr, code = self.query("SELECT dq_version(), dq_backend()")
+    self.assertEqual((rows, code), ([[VERSION, "remote"]], 0), stderr)
+    self.assertEqual(self.endpoint.requests, [])
 
 
 if __name__ == "__main__":
