@@ -33,6 +33,9 @@ set(DQ_CLICKHOUSE_SCRIPTS_DIR "var/lib/clickhouse/user_scripts" CACHE PATH
   "ClickHouse's user_scripts_path, where executable functions must live")
 set(DQ_CLICKHOUSE_CONFIG_DIR "etc/clickhouse-server" CACHE PATH
   "ClickHouse's server config directory, where *_function.xml files are read")
-install(TARGETS decision-query-udf RUNTIME DESTINATION "${DQ_CLICKHOUSE_SCRIPTS_DIR}" COMPONENT clickhouse)
+# EXCLUDE_FROM_ALL keeps these out of a plain `cmake --install`, which is what
+# make postgres-install runs, possibly in a tree where the worker was not built.
+install(TARGETS decision-query-udf RUNTIME DESTINATION "${DQ_CLICKHOUSE_SCRIPTS_DIR}"
+  COMPONENT clickhouse EXCLUDE_FROM_ALL)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/decision_query_function.xml"
-  DESTINATION "${DQ_CLICKHOUSE_CONFIG_DIR}" COMPONENT clickhouse)
+  DESTINATION "${DQ_CLICKHOUSE_CONFIG_DIR}" COMPONENT clickhouse EXCLUDE_FROM_ALL)
