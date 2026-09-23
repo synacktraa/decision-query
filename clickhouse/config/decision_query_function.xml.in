@@ -1,0 +1,36 @@
+<!-- Declares the decision-query worker to ClickHouse. Generated from
+     decision_query_function.xml.in by CMake. After installing, the only line
+     to edit is the command's backend path or URL. -->
+<functions>
+  <!-- The pooled worker every public function goes through. One worker holds
+       one resident model; raise pool_size only with the memory to match. -->
+  <function>
+    <type>executable_pool</type>
+    <name>dq_decide</name>
+    <return_type>Nullable(String)</return_type>
+    <return_name>result</return_name>
+    <argument><type>Dynamic</type><name>state</name></argument>
+    <argument><type>Nullable(String)</type><name>questions</name></argument>
+    <format>JSONEachRow</format>
+    <command>@DQ_CLICKHOUSE_COMMAND@</command>
+    <pool_size>1</pool_size>
+    <send_chunk_header>0</send_chunk_header>
+    <!-- ClickHouse's defaults assume workers that answer in milliseconds; a
+         model takes seconds to load and about a second per row on the CPU. -->
+    <command_read_timeout>600000</command_read_timeout>
+    <command_write_timeout>600000</command_write_timeout>
+    <max_command_execution_time>3600</max_command_execution_time>
+  </function>
+  <!-- dq_backend(): starts a worker, loads the model, reports the backend
+       name and exits. A few seconds per call, no memory kept afterwards. -->
+  <function>
+    <type>executable</type>
+    <name>dq_backend_raw</name>
+    <return_type>String</return_type>
+    <return_name>result</return_name>
+    <argument><type>UInt8</type><name>dummy</name></argument>
+    <format>JSONEachRow</format>
+    <command>@DQ_CLICKHOUSE_COMMAND@ --print-backend</command>
+    <command_read_timeout>600000</command_read_timeout>
+  </function>
+</functions>
