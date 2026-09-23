@@ -125,6 +125,14 @@ class TestWorker(unittest.TestCase):
     self.assertIn("Decision endpoint returned HTTP 500", stderr)
     self.assertEqual(code, 1)
 
+  def test_identifies_itself_and_sends_the_key_option(self):
+    run_worker([{"state": "text", "questions": QUESTION}],
+               f"--backend={self.endpoint.url}", '--options={"key":"test-key"}')
+    # The name before the slash is the engine's; the version must be dq_version()'s.
+    user_agent = self.endpoint.requests[0]["user_agent"]
+    self.assertTrue(user_agent.endswith("/" + VERSION), user_agent)
+    self.assertEqual(self.endpoint.requests[0]["authorization"], "Bearer test-key")
+
 
 if __name__ == "__main__":
   unittest.main()
