@@ -1470,3 +1470,14 @@ and after the CUDA paragraph: "The ClickHouse worker needs no ClickHouse headers
 **Names.** `decision-query-udf`, `dq_decide`, `dq_backend_raw`, `dq_question`, `DQ_CLICKHOUSE_COMMAND`, `DQ_CLICKHOUSE_SCRIPTS_DIR`, `DQ_CLICKHOUSE_CONFIG_DIR`, `CLICKHOUSE_PREFIX` are spelled the same in every task that uses them.
 
 **Known passes-immediately tests.** Task 8's NULL test and Task 13's tests pin behaviour that earlier tasks produce; the plan says so where it happens.
+
+## Execution notes
+
+Where the executed branch departs from the tasks above, and why:
+
+- **Eager evaluation (Tasks 8 to 10).** ClickHouse evaluates the executable function before `if()` picks a branch, so `throwIf` alone did not keep bad text away from the worker; its error won. The wrappers gained `dq_questions` and `dq_question_with`, which return NULL for unusable input, and the worker answers null to that.
+- **Arity message (Task 9).** ClickHouse reports a wrong argument count to a SQL-defined function as "expect 3 arguments. Actual 2" (25.3) or "Actual: 2" (26.10), not "passed 2, should be 3". The test asserts on the shared part.
+- **stderr on 25.3 (Task 11).** 26.10 already appends a failed worker's stderr to its error, so the tests passed there before the XML change; the red was observed on 25.3, which is why the suite is also run against the pinned minimum version.
+- **Task 3.** The User-Agent name lives on another branch, so the test pins only the version suffix.
+- **Harness (Task 13).** `clickhouse local` reads INSERT data from stdin when stdin is a pipe; the harness passes an empty stdin, otherwise table tests hang.
+- **Checkpoint.** `make model` moves a directory whose files are relative symlinks into the Hugging Face cache, which breaks them; the links were replaced by copies by hand. Worth its own fix outside this branch.

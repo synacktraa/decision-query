@@ -14,7 +14,7 @@ endpoint, computed by the shared engine so the numbers are identical across data
 |---|---|---|
 | Integration mechanism | An executable user-defined function (`executable_pool`) | ClickHouse has no loadable plugin API for functions. External executables declared in XML are the supported route. |
 | Wiring | One pooled executable function, `dq_decide`, plus SQL wrappers for the public names | Each XML function owns a process pool and each worker holds a model copy. One function keeps one copy resident. |
-| `noul` arity | Always three arguments; `''` means no criteria | ClickHouse cannot overload by argument count and has no default arguments. A wrong count fails with "passed 2, should be 3", which points at the fix. |
+| `noul` arity | Always three arguments; `''` means no criteria | ClickHouse cannot overload by argument count and has no default arguments. A wrong count fails with "expect 3 arguments. Actual 2", which points at the fix. |
 | `criteria` and `questions` type | JSON text in a `String`, as in SQLite | One rule, identical call text across all three databases. |
 | `state` type at the XML boundary | `Dynamic` | Text arrives at the worker as a JSON string and a `map(...)` or `JSON` value as an object, with no parsing of strings, so the worker distinguishes them the way the SQLite module distinguishes its JSON subtype. Verified on ClickHouse 26.10.1. |
 | Minimum ClickHouse version | 25.3 | `Dynamic` became production-ready and enabled by default in 25.3. From 24.5 to 25.2 it needs `allow_experimental_dynamic_type = 1`, which is documented but not tested. |
@@ -32,6 +32,10 @@ All verified on ClickHouse 26.10.1 with `clickhouse local` unless noted.
 - The XML `<command>` may carry flags after the script name with `execute_direct = 1`; the flags arrive in `argv` intact as long as they contain no spaces.
 - `CREATE FUNCTION` lambdas take untyped parameters and may call executable functions and other lambdas. None of `noul`, `choice`, `score`, `decide`, `dq_version`, `dq_backend`, `dq_decide`, `dq_question` collides with a built-in.
 - `throwIf(condition, 'constant message')` inside `if(...)` raises the message to the client, and a NULL condition does not throw. `format()` does not escape `{{`, so JSON is built with `concat`.
+- An executable function is evaluated eagerly, before `if()` picks a branch, so guarding a call with `throwIf` does not stop the worker from receiving the argument. The wrappers hand the worker NULL for any unusable `questions` or `criteria`, which it answers with null and no request, so the `throwIf` message is the only error.
+- ClickHouse 26.10 appends a failed worker's stderr to its exit-code error; 25.3 reports only the exit code. `stderr_reaction = throw` makes the message reach the client on both.
+- ClickHouse's message for a wrong argument count to a SQL-defined function is "expect 3 arguments. Actual 2" on 25.3 and "Actual: 2" on 26.10, not the built-ins' "passed 2, should be 3".
+- `clickhouse local` reads INSERT data from stdin when stdin is a pipe and waits for it to close; the test harness gives it an empty stdin.
 - `allow_experimental_dynamic_type`, `allow_experimental_variant_type` and `allow_experimental_json_type` flipped to `true` in 25.3 (settings change history, "production-ready").
 
 ## Architecture
@@ -144,7 +148,8 @@ seconds and holds no memory afterwards. It exists for the "is CUDA in use" check
 ### The SQL wrappers
 
 Generated from `sql/decision_query.sql.in`; CMake fills in the version. Running the file is
-idempotent.
+idempotent. The helpers `dq_questions`, `dq_question_with` and `dq_question` return NULL
+for unusable input, which is what keeps bad text away from the eagerly evaluated worker.
 
 ```sql
 CREATE OR REPLACE FUNCTION dq_version AS () -> 'v@DQ_VERSION_TEXT@';
@@ -343,7 +348,7 @@ Small facts the design assumes that only a running server can confirm. Each has 
 
 | Item | Fallback if it fails |
 |---|---|
-| Redirecting fd 2 during model load silences all library output, so `stderr_reaction = throw` is safe | `stderr_reaction = log_last`; the README points to the server log for worker errors |
-| `max_command_execution_time` accepts 3600, or 0 means unlimited | Keep 3600 and document raising it |
+| Redirecting fd 2 during model load silences all library output, so `stderr_reaction = throw` is safe (confirmed by the model-backed silence test) | `stderr_reaction = log_last`; the README points to the server log for worker errors |
+| `max_command_execution_time` accepts 3600, or 0 means unlimited (a 2 s answer passed with the limit at 1 s on 26.10, so it is not the hazard first feared) | Keep 3600 and document raising it |
 | An edited XML is reloaded without a server restart | Document `SYSTEM RELOAD FUNCTIONS` or a restart |
-| `JSONType` on invalid text does not throw before `isValidJSON` is checked | Reorder the `decide` validation into nested `if`s |
+| `JSONType` on invalid text does not throw before `isValidJSON` is checked (confirmed: it returns `Null`) | Reorder the `decide` validation into nested `if`s |
