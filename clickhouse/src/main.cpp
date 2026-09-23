@@ -3,7 +3,6 @@
 // Started by ClickHouse from decision_query_function.xml, never by hand. Reads
 // one JSON line per row from stdin ({"state": ..., "questions": ...}), answers
 // through the shared engine and writes one JSON line per row ({"result": ...}).
-#include <fcntl.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -25,9 +24,9 @@ namespace {
     arguments parsed;
     for (int i = 1; i < argc; ++i) {
       const std::string argument = argv[i];
-      if (argument.rfind("--backend=", 0) == 0)
+      if (argument.starts_with("--backend="))
         parsed.backend = argument.substr(10);
-      else if (argument.rfind("--options=", 0) == 0)
+      else if (argument.starts_with("--options="))
         parsed.options = argument.substr(10);
       else if (argument == "--print-backend")
         parsed.print_backend = true;
@@ -40,7 +39,7 @@ namespace {
   }
 
   json parse_options(const std::string &text) {
-    if (text.empty()) return json();
+    if (text.empty()) return {};
     try {
       return json::parse(text);
     } catch (const json::exception &e) {
@@ -54,18 +53,21 @@ namespace {
   struct silenced_output {
     int saved_stdout = dup(1), saved_stderr = dup(2);
     silenced_output() {
-      std::fflush(stdout);
-      std::fflush(stderr);
-      const int null = open("/dev/null", O_WRONLY);
-      if (null >= 0) {
-        dup2(null, 1);
-        dup2(null, 2);
-        close(null);
+      static_cast<void>(std::fflush(stdout));
+      static_cast<void>(std::fflush(stderr));
+      if (std::FILE *null = std::fopen("/dev/null", "w")) {
+        dup2(fileno(null), 1);
+        dup2(fileno(null), 2);
+        static_cast<void>(std::fclose(null));
       }
     }
+    silenced_output(const silenced_output &) = delete;
+    silenced_output(silenced_output &&) = delete;
+    silenced_output &operator=(const silenced_output &) = delete;
+    silenced_output &operator=(silenced_output &&) = delete;
     ~silenced_output() {
-      std::fflush(stdout);
-      std::fflush(stderr);
+      static_cast<void>(std::fflush(stdout));
+      static_cast<void>(std::fflush(stderr));
       dup2(saved_stdout, 1);
       dup2(saved_stderr, 2);
       close(saved_stdout);
@@ -86,7 +88,7 @@ int main(int argc, char **argv) {
     const json options = parse_options(args.options);
     auto &engine = dq::engine::instance();
     {
-      silenced_output quiet;
+      const silenced_output quiet;
       engine.load(args.backend, options);
     }
     std::string line;
