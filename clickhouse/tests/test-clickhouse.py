@@ -192,6 +192,18 @@ class TestBuild(unittest.TestCase):
       self.assertTrue((Path(prefix) / "etc/clickhouse-server/decision_query_function.xml").exists())
 
 
+  def test_default_install_leaves_the_clickhouse_component_out(self):
+    # sudo make postgres-install runs cmake --install with no component, in a
+    # tree where the worker may not have been built, so these rules are opt-in.
+    with tempfile.TemporaryDirectory() as prefix:
+      completed = subprocess.run(["cmake", f"-DCMAKE_INSTALL_PREFIX={prefix}", "-P",
+                                  str(BUILD / "cmake_install.cmake")], capture_output=True, text=True)
+      self.assertEqual(completed.returncode, 0, completed.stderr)
+      self.assertFalse((Path(prefix) / "var/lib/clickhouse/user_scripts/decision-query-udf").exists(),
+                       "the worker was installed without --component clickhouse")
+      self.assertFalse((Path(prefix) / "etc/clickhouse-server/decision_query_function.xml").exists())
+
+
 
 class TestClickHouse(unittest.TestCase):
   """The SQL surface, through clickhouse local and the fake endpoint."""
