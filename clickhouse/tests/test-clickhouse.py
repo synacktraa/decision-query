@@ -204,6 +204,28 @@ class TestClickHouse(unittest.TestCase):
     self.assertEqual((rows, code), ([[VERSION, "remote"]], 0), stderr)
     self.assertEqual(self.endpoint.requests, [])
 
+  def test_decide_sends_the_request_shape_and_returns_the_answers(self):
+    rows, stderr, code = self.query(f"SELECT decide('I was charged twice', '{QUESTION}')")
+    self.assertEqual(code, 0, stderr)
+    self.assertEqual(json.loads(rows[0][0]), self.endpoint.answers)
+    self.assertEqual(self.endpoint.requests[0]["body"],
+                     {"state": "I was charged twice", "questions": json.loads(QUESTION), "model": "jev-latest"})
+
+  def test_structured_state_reaches_the_endpoint_as_an_object(self):
+    rows, stderr, code = self.query(f"""SELECT
+      decide(map('subject', 'Duplicate invoice', 'body', 'I was charged twice'), '{QUESTION}'),
+      decide('{{"subject": "looks like JSON"}}', '{QUESTION}')""")
+    self.assertEqual(code, 0, stderr)
+    self.assertCountEqual([request["body"]["state"] for request in self.endpoint.requests],
+                          [{"subject": "Duplicate invoice", "body": "I was charged twice"},
+                           '{"subject": "looks like JSON"}'])
+
+  def test_a_table_scan_goes_through_one_worker_in_order(self):
+    rows, stderr, code = self.query(f"SELECT decide(x, '{QUESTION}') FROM (SELECT arrayJoin(['a', 'b', 'c']) AS x)")
+    self.assertEqual(code, 0, stderr)
+    self.assertEqual(len(rows), 3)
+    self.assertEqual([request["body"]["state"] for request in self.endpoint.requests], ["a", "b", "c"])
+
 
 if __name__ == "__main__":
   unittest.main()
