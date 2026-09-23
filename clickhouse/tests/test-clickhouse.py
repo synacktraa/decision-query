@@ -87,9 +87,11 @@ def clickhouse(sql, backend, options=""):
       f"<user_defined_executable_functions_config>{directory}/*_function.xml</user_defined_executable_functions_config>"
       "</clickhouse>")
     wrappers = WRAPPERS.read_text() if WRAPPERS.exists() else ""
+    # clickhouse local reads INSERT data from stdin when it is a pipe, and waits
+    # for it to close; an empty stdin keeps INSERT ... VALUES queries from hanging.
     completed = subprocess.run([CLICKHOUSE, "local", "-C", str(directory / "config.xml"),
                                 "--output-format", "JSONCompactEachRow", "--query", wrappers + "\n" + sql],
-                               capture_output=True, text=True, timeout=600)
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
     rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
     return rows, completed.stderr, completed.returncode
 
