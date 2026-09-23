@@ -301,6 +301,17 @@ class TestClickHouse(unittest.TestCase):
     self.assertEqual((rows, code), ([[None, None]], 0), stderr)
     self.assertEqual(self.endpoint.requests, [])
 
+  def test_endpoint_errors_reach_the_client(self):
+    self.endpoint.status = 500
+    rows, stderr, code = self.query(f"SELECT decide('state', '{QUESTION}')")
+    self.assertNotEqual(code, 0)
+    self.assertIn("Decision endpoint returned HTTP 500", stderr)
+
+  def test_bad_backend_path_reaches_the_client(self):
+    rows, stderr, code = clickhouse(f"SELECT decide('state', '{QUESTION}')", "/nonexistent/checkpoint")
+    self.assertNotEqual(code, 0)
+    self.assertIn("Not a checkpoint directory: /nonexistent/checkpoint", stderr)
+
 
 if __name__ == "__main__":
   unittest.main()
