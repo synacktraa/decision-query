@@ -226,6 +226,22 @@ class TestClickHouse(unittest.TestCase):
     self.assertEqual(len(rows), 3)
     self.assertEqual([request["body"]["state"] for request in self.endpoint.requests], ["a", "b", "c"])
 
+  def test_decide_rejects_bad_questions_before_the_worker(self):
+    for questions, message in (("nope", "questions must be valid JSON"),
+                               ("{}", "questions must be a nonempty JSON object"),
+                               ("[1]", "questions must be a nonempty JSON object")):
+      rows, stderr, code = self.query(f"SELECT decide('state', '{questions}')")
+      self.assertNotEqual(code, 0, questions)
+      self.assertIn(message, stderr)
+      self.assertNotIn("Executable generates stderr", stderr, "the wrapper, not the worker, must reject it")
+    self.assertEqual(self.endpoint.requests, [])
+
+  def test_decide_null_in_null_out(self):
+    rows, stderr, code = self.query(
+      f"SELECT decide(CAST(NULL AS Nullable(String)), '{QUESTION}'), decide('state', CAST(NULL AS Nullable(String)))")
+    self.assertEqual((rows, code), ([[None, None]], 0), stderr)
+    self.assertEqual(self.endpoint.requests, [])
+
 
 if __name__ == "__main__":
   unittest.main()
