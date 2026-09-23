@@ -1,6 +1,6 @@
 # decision-query
 
-Typed decisions as SQL functions, for SQLite and PostgreSQL. Ask a yes/no question,
+Typed decisions as SQL functions, for SQLite, PostgreSQL and ClickHouse. Ask a yes/no question,
 pick from named options, or place a row on a rubric, and get calibrated probabilities
 back -- so a table of text can be classified, scored or filtered without leaving the
 database.
@@ -19,10 +19,14 @@ select id from tickets where noul(body, 'Does the customer request a refund?') >
 CREATE EXTENSION decision_query;
 SET decision_query.model_dir = '/srv/models/laya';
 SELECT id FROM tickets WHERE noul(body, 'Does the customer request a refund?') > 0.5;
+
+-- ClickHouse
+SELECT id FROM tickets WHERE noul(body, 'Does the customer request a refund?', '') > 0.5;
 ```
 
-Both modules provide `dq_load`, `dq_backend`, `dq_version`, `noul`,
-`choice`, `score` and `decide()`, which returns the full answers object as JSON.
+All three modules provide `dq_version`, `dq_backend`, `noul`, `choice`, `score` and
+`decide()`, which returns the full answers object as JSON. SQLite and PostgreSQL also
+provide `dq_load`; ClickHouse sets the model in its XML declaration instead.
 
 ## Layout
 
@@ -32,6 +36,7 @@ Both modules provide `dq_load`, `dq_backend`, `dq_version`, `noul`,
 | [`laya.cpp/`](laya.cpp/) | Git submodule with the native runtime, tokenizers and the `laya-cli` tool. |
 | [`sqlite/`](sqlite/README.md) | SQLite loadable module, static library, Python wheel and tests. |
 | [`postgres/`](postgres/README.md) | PostgreSQL extension built from the [pg_extension](https://github.com/mkindahl/pg_extension) CMake template, with pg_regress tests. |
+| [`clickhouse/`](clickhouse/README.md) | ClickHouse executable function: the `decision-query-udf` worker, the XML that declares it and the SQL wrappers, with tests driven through `clickhouse local`. |
 | [`tests/`](tests/) | Native Catch2 unit tests for the engine, the HTTP backend and the SQLite functions; no checkpoint needed. |
 | [`fuzz/`](fuzz/) | libFuzzer targets with seed corpora, run in CI by [ClusterFuzzLite](.clusterfuzzlite/). |
 | [`cmake/`](cmake/) | Warning, sanitizer and libFuzzer modules vendored from [cpp-best-practices/cmake_template](https://github.com/cpp-best-practices/cmake_template). |
@@ -53,13 +58,16 @@ cd decision-query
 make loadable static        # SQLite: dist/debug/decision_query.so, libdecision_query.a, decision_query.h
 make postgres               # PostgreSQL: build/postgres/decision_query.so and decision_query.control
 sudo make postgres-install  # into the directories reported by pg_config
+make clickhouse             # ClickHouse: build/clickhouse/decision-query-udf, decision_query_function.xml, decision_query.sql
+sudo make clickhouse-install
 ```
 
 The CUDA backend is enabled automatically when CMake finds a CUDA compiler. Force a
 choice with `CMAKE_FLAGS='-DDQ_CUDA=OFF' make loadable` or `-DDQ_CUDA=ON`,
 adding `-DCMAKE_CUDA_ARCHITECTURES=<arch>` for your GPU as described in the laya.cpp README.
 The PostgreSQL module is configured automatically when `pg_config` and the server headers
-are found; `-DDQ_POSTGRES=OFF` skips it.
+are found; `-DDQ_POSTGRES=OFF` skips it. The ClickHouse worker needs no ClickHouse headers
+and always builds; `-DDQ_CLICKHOUSE=OFF` skips it.
 
 ## Models
 
@@ -167,6 +175,7 @@ make test-loadable                                     # SQLite, no checkpoint n
 DQ_MODEL_DIR=models/laya make cli test-loadable      # SQLite with checkpoint and CLI parity
 DQ_MODEL_DIR=models/laya DQ_OPTIONS='{"cuda": false}' make postgres
 sudo make postgres-install && make test-postgres       # pg_regress, not as root
+make test-clickhouse                                   # ClickHouse, needs a clickhouse binary on PATH
 ```
 
 The native unit tests run under the sanitizers and valgrind as well, and the fuzz
@@ -200,8 +209,8 @@ fuzz each pull request for ten minutes and main for an hour a day.
   roughly five times the latency. See [Metal](laya.cpp/docs/precision.md#apple-metal).
 - When built with CUDA, load the model before other CUDA users in the same process; the
   runtime disables TF32 before initializing cuBLAS.
-- SQLite keeps one model per process; PostgreSQL backends each load their own copy. See
-  the module READMEs.
+- SQLite keeps one model per process; PostgreSQL backends and ClickHouse pool workers
+  each load their own copy. See the module READMEs.
 
 ## License
 
