@@ -20,8 +20,10 @@
 #  define DQ_CUDA_DEFAULT 0
 #endif
 
-// Each target defines its own version macro; the shared engine belongs to both.
-#if defined(SQLITE_DQ_VERSION)
+// Each target defines its own version macro; the shared engine belongs to all.
+#if defined(DQ_VERSION)
+#define DQ_UA_VERSION DQ_VERSION
+#elif defined(SQLITE_DQ_VERSION)
 #define DQ_UA_VERSION SQLITE_DQ_VERSION
 #elif defined(PGDQ_VERSION)
 #define DQ_UA_VERSION PGDQ_VERSION

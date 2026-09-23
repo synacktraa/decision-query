@@ -10,4 +10,5 @@ endif()
 
 add_executable(decision-query-udf src/main.cpp)
 target_compile_options(decision-query-udf PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_definitions(decision-query-udf PRIVATE DQ_VERSION="v${DQ_VERSION_TEXT}")
 target_link_libraries(decision-query-udf PRIVATE decision-query-engine)
