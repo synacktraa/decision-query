@@ -5,3 +5,5 @@ CREATE OR REPLACE FUNCTION dq_version AS () -> 'v@DQ_VERSION_TEXT@';
 
 -- Slow by design: starts a worker, loads the model, reports its backend.
 CREATE OR REPLACE FUNCTION dq_backend AS () -> dq_backend_raw(1);
+
+CREATE OR REPLACE FUNCTION decide AS (state, questions) -> dq_decide(state, questions);
