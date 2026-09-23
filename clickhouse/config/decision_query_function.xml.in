@@ -18,6 +18,9 @@
     <!-- ClickHouse's defaults assume workers that answer in milliseconds; a
          model takes seconds to load and about a second per row on the CPU. -->
     <command_read_timeout>600000</command_read_timeout>
+    <!-- The worker's only stderr output is an error message; make it the query's
+         error. Without this, 25.3 reports only the exit code. -->
+    <stderr_reaction>throw</stderr_reaction>
     <command_write_timeout>600000</command_write_timeout>
     <max_command_execution_time>3600</max_command_execution_time>
   </function>
@@ -32,5 +35,8 @@
     <format>JSONEachRow</format>
     <command>@DQ_CLICKHOUSE_COMMAND@ --print-backend</command>
     <command_read_timeout>600000</command_read_timeout>
+    <!-- The worker's only stderr output is an error message; make it the query's
+         error. Without this, 25.3 reports only the exit code. -->
+    <stderr_reaction>throw</stderr_reaction>
   </function>
 </functions>
