@@ -279,10 +279,11 @@ class TestClickHouse(unittest.TestCase):
     self.assertEqual(self.endpoint.requests, [])
 
   def test_noul_takes_exactly_three_arguments(self):
-    # ClickHouse words this differently for SQL-defined functions than for built-ins.
+    # ClickHouse words this differently for SQL-defined functions than for built-ins,
+    # and 25.3 and 26.10 differ by a colon after "Actual".
     rows, stderr, code = self.query("SELECT noul('body', 'question')")
     self.assertNotEqual(code, 0)
-    self.assertIn("expect 3 arguments. Actual: 2", stderr)
+    self.assertIn("expect 3 arguments", stderr)
 
   def test_choice_and_score_extract_their_answers(self):
     rows, stderr, code = self.query("""SELECT
