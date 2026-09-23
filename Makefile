@@ -150,6 +150,17 @@ fuzz:
 	cmake --build build_fuzz --parallel --target fuzz_options fuzz_endpoint fuzz_sql
 	ctest --test-dir build_fuzz -L fuzz --output-on-failure
 
+# ClickHouse executable function (clickhouse/), built in the same tree.
+# DQ_MODEL_DIR may be a checkpoint directory or an http(s):// URL.
+CLICKHOUSE_BACKEND=$(if $(filter http://% https://%,$(DQ_MODEL_DIR)),$(DQ_MODEL_DIR),$(abspath $(DQ_MODEL_DIR)))
+CLICKHOUSE_CMAKE_FLAGS=$(if $(DQ_MODEL_DIR),-DDQ_MODEL_DIR=$(CLICKHOUSE_BACKEND)) $(if $(DQ_OPTIONS),'-DDQ_OPTIONS=$(DQ_OPTIONS)')
+
+clickhouse:
+	cmake -S . -B $(BUILD) $(CMAKE_FLAGS) $(CLICKHOUSE_CMAKE_FLAGS) && cmake --build $(BUILD) --parallel --target decision-query-udf
+
+test-clickhouse:
+	$(PYTHON) clickhouse/tests/test-clickhouse.py
+
 test-loadable:
 	$(PYTHON) sqlite/tests/test-loadable.py
 
@@ -164,4 +175,5 @@ test:
 	loadable loadable-release static static-release cli \
 	python python-release python-versions model \
 	postgres postgres-install test-postgres test-loadable test-python \
-	test-native memcheck fuzz
+	test-native memcheck fuzz \
+	clickhouse test-clickhouse

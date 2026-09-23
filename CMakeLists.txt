@@ -81,3 +81,10 @@ endif()
 if(DQ_BUILD_FUZZ_TESTS)
   add_subdirectory(fuzz)
 endif()
+
+# The ClickHouse worker needs no ClickHouse headers, so it builds wherever the
+# SQLite module builds.
+option(DQ_CLICKHOUSE "Build the ClickHouse executable function" ON)
+if(DQ_CLICKHOUSE)
+  add_subdirectory(clickhouse)
+endif()
