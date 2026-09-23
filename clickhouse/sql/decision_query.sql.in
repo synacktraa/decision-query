@@ -1,0 +1,7 @@
+-- Public functions, as wrappers over the executable functions declared in
+-- decision_query_function.xml. Generated from decision_query.sql.in by CMake.
+-- Run once per server: clickhouse-client --queries-file decision_query.sql
+CREATE OR REPLACE FUNCTION dq_version AS () -> 'v@DQ_VERSION_TEXT@';
+
+-- Slow by design: starts a worker, loads the model, reports its backend.
+CREATE OR REPLACE FUNCTION dq_backend AS () -> dq_backend_raw(1);
