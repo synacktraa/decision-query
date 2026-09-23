@@ -81,15 +81,24 @@ int main(int argc, char **argv) {
   try {
     const arguments args = parse_arguments(argc, argv);
     const json options = parse_options(args.options);
+    auto &engine = dq::engine::instance();
     {
       silenced_output quiet;
-      dq::engine::instance().load(args.backend, options);
+      engine.load(args.backend, options);
     }
     std::string line;
     while (std::getline(std::cin, line)) {
       if (line.empty()) continue;
-      json::parse(line);
-      write_result(nullptr);
+      const json row = json::parse(line);
+      const json &state = row.at("state");
+      const json &questions = row.at("questions");
+      if (state.is_null() || questions.is_null()) {
+        write_result(nullptr);
+        continue;
+      }
+      // state is forwarded as received: a JSON string stays text, an object
+      // stays structured, which is what the SQLite module's JSON subtype does.
+      write_result(engine.answers(state, json::parse(questions.get<std::string>())).dump());
     }
     return 0;
   } catch (const std::exception &e) {
