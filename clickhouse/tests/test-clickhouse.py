@@ -19,6 +19,10 @@ CLICKHOUSE = os.environ.get("CLICKHOUSE") or shutil.which("clickhouse")
 MODEL_DIR = os.environ.get("DQ_MODEL_DIR")
 DQ_OPTIONS = os.environ.get("DQ_OPTIONS", "")
 VERSION = "v" + (ROOT / "VERSION").read_text().strip()
+CLI_PATH = os.environ.get("LAYA_CLI", str(ROOT / "build/bin/laya-cli"))
+CLI_FLAGS = os.environ.get("LAYA_CLI_FLAGS", "--cpu").split()
+SMOKE_CASES = ROOT / "laya.cpp/benchmarks/cases/smoke.json"
+TOLERANCE = 1e-4  # laya.cpp's own acceptance tolerance for public numbers.
 
 QUESTION = '{"q": {"type": "noul", "instructions": "Does the customer request a refund?"}}'
 
@@ -322,6 +326,97 @@ class TestClickHouse(unittest.TestCase):
     rows, stderr, code = clickhouse(f"SELECT decide('state', '{QUESTION}')", "/nonexistent/checkpoint")
     self.assertNotEqual(code, 0)
     self.assertIn("Not a checkpoint directory: /nonexistent/checkpoint", stderr)
+
+
+@unittest.skipUnless(MODEL_DIR, "set DQ_MODEL_DIR to a checkpoint directory to run model-backed tests")
+class TestModel(unittest.TestCase):
+  """Against a real checkpoint: behaviour, silence on stderr, parity with laya-cli."""
+
+  BODY = "I was charged twice. Please refund the extra charge today."
+  DEPARTMENTS = '{"billing": "payments and refunds", "technical": "bugs and outages", "sales": "new contracts"}'
+
+  @classmethod
+  def setUpClass(cls):
+    cls.flags = [f"--backend={MODEL_DIR}"] + ([f"--options={DQ_OPTIONS}"] if DQ_OPTIONS else [])
+
+  def query(self, sql):
+    return clickhouse(sql, str(Path(MODEL_DIR).resolve()), DQ_OPTIONS)
+
+  def test_worker_is_silent_after_loading_a_checkpoint(self):
+    results, stderr, code = run_worker([{"state": "Please refund the duplicate charge.", "questions": QUESTION}],
+                                       *self.flags)
+    self.assertEqual((stderr, code), ("", 0))
+    self.assertGreater(json.loads(results[0])["q"]["noul"], 0.5)
+
+  def test_decisions_about_a_ticket(self):
+    rows, stderr, code = self.query(f"""
+      SELECT dq_backend(),
+             noul('{self.BODY}', 'Does the customer request a refund?', ''),
+             noul('The service works well. Thank you!', 'Is this a complaint?', ''),
+             noul('{self.BODY}', 'Does the customer request a refund?',
+                  '{{"true": "a refund is requested", "false": "no refund is requested"}}'),
+             choice('{self.BODY}', 'Which department should handle this?', '{self.DEPARTMENTS}'),
+             choice(map('subject', 'Duplicate invoice', 'body', '{self.BODY}'),
+                    'Which department should handle this?', '["billing", "technical", "sales"]'),
+             score('{self.BODY}', 'How urgent is the request?', '["not urgent", "soon", "immediate"]')""")
+    self.assertEqual(code, 0, stderr)
+    backend, refund, complaint, described, department, department_from_fields, urgency = rows[0]
+    self.assertTrue(backend)
+    self.assertGreater(refund, 0.5)
+    self.assertLess(complaint, 0.5)
+    self.assertGreater(described, 0.5)
+    self.assertEqual((department, department_from_fields), ("billing", "billing"))
+    self.assertTrue(0.0 <= urgency <= 2.0, urgency)
+
+  def test_decide_answers_several_questions_in_one_pass(self):
+    questions = json.dumps({
+      "department": {"type": "choice", "instructions": "Which department should handle this?",
+                     "criteria": json.loads(self.DEPARTMENTS)},
+      "urgency": {"type": "score", "instructions": "How urgent is the request?",
+                  "criteria": ["not urgent", "soon", "immediate"]},
+      "refund": {"type": "noul", "instructions": "Does the customer request a refund?"}})
+    rows, stderr, code = self.query(
+      f"SELECT decide(map('subject', 'Duplicate invoice', 'body', '{self.BODY}'), '{questions}')")
+    self.assertEqual(code, 0, stderr)
+    answers = json.loads(rows[0][0])
+    self.assertEqual(list(answers), ["department", "urgency", "refund"])
+    self.assertEqual(answers["department"]["choice"], "billing")
+    self.assertGreater(answers["department"]["probabilities"]["billing"], 0.5)
+    self.assertGreater(answers["refund"]["noul"], 0.5)
+    self.assertTrue(0.0 <= answers["urgency"]["score"] <= 2.0)
+
+  def test_table_scan(self):
+    rows, stderr, code = self.query(f"""
+      CREATE TABLE tickets (id UInt8, body String) ENGINE = Memory;
+      INSERT INTO tickets VALUES (1, '{self.BODY}'), (2, 'The service works well. Thank you!'),
+                                 (3, 'The login page returns a 500 error since this morning.');
+      SELECT id, choice(body, 'Which department should handle this?', '["billing", "technical", "sales"]')
+        FROM tickets WHERE noul(body, 'Does the customer request a refund?', '') > 0.5 ORDER BY id""")
+    self.assertEqual((rows, code), ([[1, "billing"]], 0), stderr)
+
+  @unittest.skipUnless(os.path.exists(CLI_PATH), "build laya-cli (make cli) to run the parity test")
+  def test_cli_parity(self):
+    cases = json.loads(SMOKE_CASES.read_text())
+    stdin = "\n".join(json.dumps({"state": case["state"], "questions": case["questions"]}) for case in cases) + "\n"
+    cli = subprocess.run([CLI_PATH, "--model", MODEL_DIR] + CLI_FLAGS, input=stdin,
+                         capture_output=True, text=True, check=True)
+    expected = [json.loads(line)["results"][0]["answers"] for line in cli.stdout.splitlines() if line.strip()]
+    results, stderr, code = run_worker(
+      [{"state": case["state"], "questions": json.dumps(case["questions"])} for case in cases], *self.flags)
+    self.assertEqual((stderr, code), ("", 0))
+    self.assertEqual(len(results), len(cases))
+    for case, want, got in zip(cases, expected, results):
+      self.assert_close(want, json.loads(got), case["id"])
+
+  def assert_close(self, expected, actual, path):
+    if isinstance(expected, dict):
+      self.assertEqual(list(expected), list(actual), path)
+      for key in expected:
+        self.assert_close(expected[key], actual[key], f"{path}.{key}")
+    elif isinstance(expected, (int, float)) and not isinstance(expected, bool):
+      self.assertAlmostEqual(expected, actual, delta=TOLERANCE, msg=path)
+    else:
+      self.assertEqual(expected, actual, path)
 
 
 if __name__ == "__main__":
