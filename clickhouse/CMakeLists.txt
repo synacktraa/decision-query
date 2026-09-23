@@ -13,6 +13,11 @@ target_compile_options(decision-query-udf PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(decision-query-udf PRIVATE DQ_VERSION="v${DQ_VERSION_TEXT}")
 target_link_libraries(decision-query-udf PRIVATE decision-query-engine)
 
+# Warning set and sanitizers from the top-level build (see ../CMakeLists.txt).
+if(TARGET dq_options)
+  target_link_libraries(decision-query-udf PRIVATE dq_options dq_warnings)
+endif()
+
 # The XML command line. DQ_MODEL_DIR and DQ_OPTIONS are the same cache variables
 # the PostgreSQL tests use; DQ_MODEL_DIR may also be an http(s):// URL.
 set(DQ_MODEL_DIR "" CACHE PATH "Checkpoint directory or URL written into the XML command line")
