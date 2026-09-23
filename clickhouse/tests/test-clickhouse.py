@@ -101,6 +101,30 @@ class TestWorker(unittest.TestCase):
     self.assertIn("Not a checkpoint directory: /nonexistent/checkpoint", stderr)
     self.assertEqual(code, 1)
 
+  def test_answers_a_request_through_the_endpoint(self):
+    results, stderr, code = run_worker([
+      {"state": "I was charged twice", "questions": QUESTION},
+      {"state": {"subject": "Duplicate invoice", "body": "I was charged twice"}, "questions": QUESTION},
+      {"state": '{"subject": "looks like JSON"}', "questions": QUESTION},
+    ], f"--backend={self.endpoint.url}")
+    self.assertEqual((stderr, code), ("", 0))
+    self.assertEqual([json.loads(result)["q"]["noul"] for result in results], [0.25, 0.25, 0.25])
+    self.assertEqual([request["body"]["state"] for request in self.endpoint.requests], [
+      "I was charged twice",
+      {"subject": "Duplicate invoice", "body": "I was charged twice"},
+      '{"subject": "looks like JSON"}'])
+    self.assertEqual(self.endpoint.requests[0]["path"], "/v1/systemone")
+    self.assertEqual(self.endpoint.requests[0]["body"],
+                     {"state": "I was charged twice", "questions": json.loads(QUESTION), "model": "jev-latest"})
+
+  def test_endpoint_failure_stops_the_worker_with_the_message(self):
+    self.endpoint.status = 500
+    results, stderr, code = run_worker([{"state": "text", "questions": QUESTION}],
+                                       f"--backend={self.endpoint.url}")
+    self.assertEqual(results, [])
+    self.assertIn("Decision endpoint returned HTTP 500", stderr)
+    self.assertEqual(code, 1)
+
 
 if __name__ == "__main__":
   unittest.main()
