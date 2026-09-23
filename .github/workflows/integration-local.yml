@@ -41,6 +41,16 @@ jobs:
       - name: Fetch the pinned checkpoint
         run: test -d models/laya || make model
       - run: make loadable
+      # The oldest supported release, so the suite proves the minimum-version claim.
+      - name: Install ClickHouse 25.3 LTS
+        run: |
+          curl -fsSL -o clickhouse.tgz https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-amd64.tgz
+          tar -xzf clickhouse.tgz clickhouse-common-static-25.3.14.14/usr/bin/clickhouse
+          sudo install -m 755 clickhouse-common-static-25.3.14.14/usr/bin/clickhouse /usr/local/bin/clickhouse
+          clickhouse local --version
+      - run: make clickhouse cli
+      - name: Model-backed checks through ClickHouse
+        run: DQ_MODEL_DIR=models/laya DQ_OPTIONS='{"cuda":false}' make test-clickhouse
       - name: Decision checks against the local checkpoint
         run: |
           python3 .github/scripts/integration_test.py \

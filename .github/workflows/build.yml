@@ -4,6 +4,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -53,3 +54,26 @@ jobs:
             build/postgres/decision_query.so
             build/postgres/decision_query.control
             postgres/decision_query--*.sql
+  clickhouse-linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libicu-dev nlohmann-json3-dev libssl-dev
+      # The oldest supported release, so the suite proves the minimum-version claim.
+      - name: Install ClickHouse 25.3 LTS
+        run: |
+          curl -fsSL -o clickhouse.tgz https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-amd64.tgz
+          tar -xzf clickhouse.tgz clickhouse-common-static-25.3.14.14/usr/bin/clickhouse
+          sudo install -m 755 clickhouse-common-static-25.3.14.14/usr/bin/clickhouse /usr/local/bin/clickhouse
+          clickhouse local --version
+      - run: make clickhouse
+      - run: make test-clickhouse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decision-query-clickhouse-linux-x86_64
+          path: |
+            build/clickhouse/decision-query-udf
+            build/clickhouse/decision_query_function.xml
+            build/clickhouse/decision_query.sql
