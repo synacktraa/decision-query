@@ -133,6 +133,11 @@ class TestWorker(unittest.TestCase):
     self.assertTrue(user_agent.endswith("/" + VERSION), user_agent)
     self.assertEqual(self.endpoint.requests[0]["authorization"], "Bearer test-key")
 
+  def test_print_backend_reports_the_backend_name(self):
+    results, stderr, code = run_worker([{"dummy": 1}], f"--backend={self.endpoint.url}", "--print-backend")
+    self.assertEqual((results, stderr, code), (["remote"], "", 0))
+    self.assertEqual(self.endpoint.requests, [])
+
 
 if __name__ == "__main__":
   unittest.main()
