@@ -42,3 +42,13 @@ CREATE OR REPLACE FUNCTION noul AS (state, instructions, criteria) ->
   if(throwIf(criteria != '' AND NOT isValidJSON(criteria), 'noul criteria must be valid JSON'),
      NULL,
      JSONExtractFloat(dq_decide(state, dq_question('noul', instructions, criteria)), 'q', 'noul'));
+
+CREATE OR REPLACE FUNCTION choice AS (state, instructions, criteria) ->
+  if(throwIf(NOT isValidJSON(criteria), 'choice criteria must be valid JSON'),
+     NULL,
+     JSONExtractString(dq_decide(state, dq_question_with('choice', instructions, criteria)), 'q', 'choice'));
+
+CREATE OR REPLACE FUNCTION score AS (state, instructions, criteria) ->
+  if(throwIf(NOT isValidJSON(criteria), 'score criteria must be valid JSON'),
+     NULL,
+     JSONExtractFloat(dq_decide(state, dq_question_with('score', instructions, criteria)), 'q', 'score'));
