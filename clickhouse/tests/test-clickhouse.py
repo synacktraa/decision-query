@@ -139,5 +139,17 @@ class TestWorker(unittest.TestCase):
     self.assertEqual(self.endpoint.requests, [])
 
 
+class TestBuild(unittest.TestCase):
+  """Files that make clickhouse generates beside the worker."""
+
+  def test_xml_declares_both_functions_with_the_worker_command(self):
+    self.assertTrue(XML.exists(), f"{XML} is missing; build it with: make clickhouse")
+    xml = XML.read_text()
+    self.assertIn("<name>dq_decide</name>", xml)
+    self.assertIn("<name>dq_backend_raw</name>", xml)
+    self.assertEqual(xml.count("<command>decision-query-udf --backend="), 2)
+    self.assertIn(" --print-backend</command>", xml)
+
+
 if __name__ == "__main__":
   unittest.main()
