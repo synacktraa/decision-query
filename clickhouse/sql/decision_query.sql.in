@@ -21,3 +21,24 @@ CREATE OR REPLACE FUNCTION decide AS (state, questions) ->
                 'questions must be a nonempty JSON object'),
      NULL,
      dq_decide(state, dq_questions(questions)));
+
+-- The one-question object the scalar functions send. As with decide, unusable
+-- criteria yield NULL so the worker never sees bad text.
+CREATE OR REPLACE FUNCTION dq_question_with AS (type, instructions, criteria) ->
+  if(isValidJSON(criteria),
+     concat('{"q":{"type":"', type, '","instructions":', toJSONString(instructions),
+            ',"criteria":', criteria, '}}'),
+     NULL);
+
+-- criteria = '' omits the key. concat and toJSONString return NULL for a NULL
+-- input, so a NULL instructions or criteria reaches the worker as null.
+CREATE OR REPLACE FUNCTION dq_question AS (type, instructions, criteria) ->
+  if(criteria = '',
+     concat('{"q":{"type":"', type, '","instructions":', toJSONString(instructions), '}}'),
+     dq_question_with(type, instructions, criteria));
+
+-- noul always takes three arguments: ClickHouse cannot overload by count.
+CREATE OR REPLACE FUNCTION noul AS (state, instructions, criteria) ->
+  if(throwIf(criteria != '' AND NOT isValidJSON(criteria), 'noul criteria must be valid JSON'),
+     NULL,
+     JSONExtractFloat(dq_decide(state, dq_question('noul', instructions, criteria)), 'q', 'noul'));
