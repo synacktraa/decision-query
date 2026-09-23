@@ -274,6 +274,33 @@ class TestClickHouse(unittest.TestCase):
     self.assertNotEqual(code, 0)
     self.assertIn("expect 3 arguments. Actual: 2", stderr)
 
+  def test_choice_and_score_extract_their_answers(self):
+    rows, stderr, code = self.query("""SELECT
+      choice('body', 'Which department?', '{"billing": "payments", "technical": "bugs"}'),
+      choice('body', 'Which department?', '["billing", "technical"]'),
+      score('body', 'How urgent?', '["not urgent", "soon", "immediate"]')""")
+    self.assertEqual((rows, code), ([["billing", "billing", 1.5]], 0), stderr)
+    questions = [request["body"]["questions"] for request in self.endpoint.requests]
+    self.assertCountEqual([question["q"]["type"] for question in questions], ["choice", "choice", "score"])
+    self.assertIn({"q": {"type": "score", "instructions": "How urgent?",
+                         "criteria": ["not urgent", "soon", "immediate"]}}, questions)
+
+  def test_choice_and_score_reject_bad_criteria_before_the_worker(self):
+    for sql, message in (("choice('body', 'q', '')", "choice criteria must be valid JSON"),
+                         ("score('body', 'q', '{')", "score criteria must be valid JSON")):
+      rows, stderr, code = self.query(f"SELECT {sql}")
+      self.assertNotEqual(code, 0, sql)
+      self.assertIn(message, stderr)
+      self.assertNotIn("Child process", stderr, "the wrapper, not the worker, must reject it")
+    self.assertEqual(self.endpoint.requests, [])
+
+  def test_choice_and_score_null_in_null_out(self):
+    rows, stderr, code = self.query("""SELECT
+      choice(CAST(NULL AS Nullable(String)), 'q', '["a"]'),
+      score('body', 'q', CAST(NULL AS Nullable(String)))""")
+    self.assertEqual((rows, code), ([[None, None]], 0), stderr)
+    self.assertEqual(self.endpoint.requests, [])
+
 
 if __name__ == "__main__":
   unittest.main()
